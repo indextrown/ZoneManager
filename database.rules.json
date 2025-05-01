@@ -1,0 +1,18 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "rooms": {
+      ".read": true,
+      ".write": true,
+      "$roomId": {
+        ".read": true,
+        ".write": true,
+        "zones": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    }
+  }
+} 
