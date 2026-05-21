@@ -117,6 +117,12 @@ flutter run -d <device-id> --dart-define-from-file=config/firebase.json
 flutter run -d <iphone-device-id>
 ```
 
+현재 확인된 무선 iOS 실기기 예시:
+
+```bash
+flutter run --release -d 00008130-00090C281A38001C --dart-define-from-file=config/firebase.json
+```
+
 이 프로젝트의 iOS Firebase 초기화는 다음 둘 중 하나를 사용합니다.
 
 - `ios/Runner/GoogleService-Info.plist`
