@@ -39,6 +39,11 @@ class HomeViewModel extends ChangeNotifier {
     await _loadUserId();
   }
 
+  Future<void> refresh() async {
+    _listenToRooms();
+    await _loadUserId();
+  }
+
   Future<void> _loadUserId() async {
     _isInitializingUser = true;
     _errorMessage = null;

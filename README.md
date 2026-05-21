@@ -86,6 +86,126 @@ flutter run
 flutter run --dart-define-from-file=config/firebase.json
 ```
 
+### 연결된 실제 기기에서 실행
+
+먼저 기기를 연결한 뒤 Flutter가 인식하는지 확인합니다.
+
+```bash
+flutter devices
+```
+
+특정 기기를 지정해서 실행하려면:
+
+```bash
+flutter run -d <device-id>
+flutter run -d <device-id> --dart-define-from-file=config/firebase.json
+```
+
+## Real device setup
+
+### iPhone에서 실행
+
+1. iPhone을 Mac에 연결합니다.
+2. 필요하면 iPhone에서 이 Mac을 신뢰합니다.
+3. Xcode에서 `ios/Runner.xcworkspace`를 엽니다.
+4. `Runner` 타깃의 `Signing & Capabilities`에서 Apple 계정과 Team을 설정합니다.
+5. Bundle Identifier가 충돌하면 고유한 값으로 바꿉니다.
+6. 기기에서 개발자 모드와 앱 실행 허용을 완료합니다.
+7. 아래 명령으로 실행합니다.
+
+```bash
+flutter run -d <iphone-device-id>
+```
+
+이 프로젝트의 iOS Firebase 초기화는 다음 둘 중 하나를 사용합니다.
+
+- `ios/Runner/GoogleService-Info.plist`
+- `--dart-define-from-file=config/firebase.json`
+
+### Android 실제 기기에서 실행
+
+1. Android 기기에서 개발자 옵션과 USB 디버깅을 켭니다.
+2. USB로 연결하고 권한 허용 팝업을 승인합니다.
+3. `flutter devices`로 기기가 잡히는지 확인합니다.
+4. 아래 명령으로 실행합니다.
+
+```bash
+flutter run -d <android-device-id> --dart-define-from-file=config/firebase.json
+```
+
+참고:
+
+- Android는 보통 `google-services.json`을 함께 쓰는 구성이 많지만, 현재 프로젝트는 Dart define 기반 Firebase 설정도 지원합니다.
+- 기기가 안 잡히면 `adb devices`와 `flutter doctor`를 같이 확인하는 것이 가장 빠릅니다.
+
+## Build
+
+### 공통 사전 점검
+
+빌드 전에 아래 순서로 상태를 확인하는 것을 권장합니다.
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+```
+
+### Android APK 빌드
+
+```bash
+flutter build apk --dart-define-from-file=config/firebase.json
+```
+
+빌드 결과물:
+
+- `build/app/outputs/flutter-apk/app-release.apk`
+
+### Android App Bundle(AAB) 빌드
+
+Google Play 배포용은 보통 AAB를 사용합니다.
+
+```bash
+flutter build appbundle --dart-define-from-file=config/firebase.json
+```
+
+빌드 결과물:
+
+- `build/app/outputs/bundle/release/app-release.aab`
+
+### iOS Release 빌드
+
+```bash
+flutter build ios --release --dart-define-from-file=config/firebase.json
+```
+
+Xcode에서 아카이브까지 진행하려면:
+
+1. `ios/Runner.xcworkspace`를 엽니다.
+2. `Runner` 타깃의 Signing 설정을 확인합니다.
+3. Xcode 메뉴에서 `Product -> Archive`를 실행합니다.
+
+### iOS IPA 배포 준비
+
+Flutter만으로 기본 iOS release build는 만들 수 있지만, 실제 App Store/TestFlight 업로드는 보통 Xcode Archive 단계까지 진행해야 합니다.
+
+일반적인 흐름:
+
+1. `flutter build ios --release`
+2. Xcode에서 `Runner.xcworkspace` 열기
+3. `Product -> Archive`
+4. Organizer에서 `Distribute App`
+
+### 현재 프로젝트의 Android 릴리즈 서명 상태
+
+현재 [android/app/build.gradle.kts](/Users/kimdonghyeon/2025/개발/Flutter/zonemanager/android/app/build.gradle.kts:1) 에서는 release 빌드가 임시로 debug signing을 사용하고 있습니다.
+
+즉 지금도 로컬 릴리즈 빌드는 가능하지만:
+
+- Play Store 배포용으로는 부적절하고
+- 실제 배포 전에는 별도의 release keystore 설정이 필요합니다
+
+배포 전에는 `signingConfigs`를 release용으로 분리하는 것을 권장합니다.
+
 ### Makefile 사용
 
 ```bash

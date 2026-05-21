@@ -6,6 +6,28 @@ class FirebaseService {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final _log = Logger('FirebaseService');
 
+  Map<String, dynamic>? _asStringKeyedMap(Object? value) {
+    if (value is! Map) {
+      return null;
+    }
+    return value.map(
+      (key, mapValue) => MapEntry(key.toString(), mapValue),
+    );
+  }
+
+  Map<String, dynamic>? _extractRoomData(Object? value, String roomId) {
+    final directRoomData = _asStringKeyedMap(value);
+    if (directRoomData == null) {
+      return null;
+    }
+
+    if (directRoomData.containsKey('creatorId') || directRoomData.containsKey('name')) {
+      return directRoomData;
+    }
+
+    return _asStringKeyedMap(directRoomData[roomId]);
+  }
+
   // 방 생성
   Future<String> createRoom(String name, String creatorId) async {
     try {
@@ -32,7 +54,7 @@ class FirebaseService {
     try {
       _log.info('방 삭제 시작 - roomId: $roomId, userId: $userId');
       
-      final snapshot = await _database.child('rooms/$roomId').get();
+      final snapshot = await _database.child('rooms').child(roomId).get();
       _log.info('방 정보 조회 - exists: ${snapshot.exists}, value: ${snapshot.value}');
       
       if (!snapshot.exists) {
@@ -42,11 +64,12 @@ class FirebaseService {
       final data = snapshot.value;
       _log.info('방 데이터 - type: ${data.runtimeType}, value: $data');
       
-      if (data is! Map) {
+      final roomData = _extractRoomData(data, roomId);
+      if (roomData == null) {
         throw '잘못된 방 데이터입니다.';
       }
 
-      final creatorId = data['creatorId'];
+      final creatorId = roomData['creatorId']?.toString();
       _log.info('방 creatorId 확인 - creatorId: $creatorId, userId: $userId');
       
       if (creatorId == null) {
@@ -57,7 +80,7 @@ class FirebaseService {
         throw '방 생성자만 삭제할 수 있습니다.';
       }
 
-      await _database.child('rooms/$roomId').remove();
+      await _database.child('rooms').child(roomId).remove();
       _log.info('방 삭제 성공: $roomId');
     } catch (e, stackTrace) {
       _log.severe('방 삭제 실패 - $e', e, stackTrace);
@@ -76,22 +99,24 @@ class FirebaseService {
           return [];
         }
 
-        if (data is! Map) {
+        final roomsMap = _asStringKeyedMap(data);
+        if (roomsMap == null) {
           _log.warning('데이터가 Map 형식이 아님');
           return [];
         }
 
-        final rooms = data.entries.map((e) {
-          if (e.value is! Map) {
+        final rooms = roomsMap.entries.map((e) {
+          final roomData = _asStringKeyedMap(e.value);
+          if (roomData == null) {
             _log.warning('방 데이터가 Map 형식이 아님: ${e.key}');
             return null;
           }
 
           try {
-            return Room.fromJson(Map<String, dynamic>.from({
-              ...Map<String, dynamic>.from(e.value as Map),
+            return Room.fromJson({
+              ...roomData,
               'id': e.key,
-            }));
+            });
           } catch (e, stackTrace) {
             _log.warning('방 데이터 변환 실패', e, stackTrace);
             return null;
@@ -111,23 +136,24 @@ class FirebaseService {
 
   // 특정 방 정보 가져오기
   Stream<Room?> getRoom(String roomId) {
-    return _database.child('rooms/$roomId').onValue.map((event) {
+    return _database.child('rooms').child(roomId).onValue.map((event) {
       try {
         if (!event.snapshot.exists) {
           _log.info('방이 존재하지 않음: $roomId');
           return null;
         }
         final data = event.snapshot.value;
-        if (data == null || data is! Map) {
+        final roomData = _extractRoomData(data, roomId);
+        if (roomData == null) {
           _log.warning('방 데이터가 올바른 형식이 아님: $roomId');
           return null;
         }
 
         try {
-          final room = Room.fromJson(Map<String, dynamic>.from({
-            ...Map<String, dynamic>.from(data),
+          final room = Room.fromJson({
+            ...roomData,
             'id': roomId,
-          }));
+          });
           _log.info('방 정보 변환 성공: $roomId');
           return room;
         } catch (e, stackTrace) {
@@ -175,17 +201,18 @@ class FirebaseService {
     try {
       _log.info('구역 삭제 시작 - roomId: $roomId, zoneId: $zoneId, userId: $userId');
       
-      final snapshot = await _database.child('rooms/$roomId').get();
+      final snapshot = await _database.child('rooms').child(roomId).get();
       if (!snapshot.exists) {
         throw '존재하지 않는 방입니다.';
       }
 
       final data = snapshot.value;
-      if (data is! Map) {
+      final roomData = _extractRoomData(data, roomId);
+      if (roomData == null) {
         throw '잘못된 방 데이터입니다.';
       }
 
-      final creatorId = data['creatorId'];
+      final creatorId = roomData['creatorId']?.toString();
       _log.info('방 creatorId 확인 - creatorId: $creatorId, userId: $userId');
       
       if (creatorId == null) {
@@ -197,7 +224,12 @@ class FirebaseService {
       }
 
       // 구역 삭제
-      await _database.child('rooms/$roomId/zones/$zoneId').remove();
+      await _database
+          .child('rooms')
+          .child(roomId)
+          .child('zones')
+          .child(zoneId)
+          .remove();
       _log.info('구역 삭제 성공 - roomId: $roomId, zoneId: $zoneId');
     } catch (e, stackTrace) {
       _log.severe('구역 삭제 실패 - $e', e, stackTrace);

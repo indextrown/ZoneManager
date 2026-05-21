@@ -173,15 +173,19 @@ class _RoomScreenViewState extends State<_RoomScreenView> {
             onPressed: () async {
               final viewModel = context.read<RoomViewModel>();
               final navigator = Navigator.of(dialogContext);
-              final parentNavigator = Navigator.of(context);
               final messenger = ScaffoldMessenger.of(dialogContext);
 
               try {
                 await viewModel.deleteRoom();
-                navigator.pop(); // 다이얼로그 닫기
-                parentNavigator.pop(); // 화면 닫기
+                navigator.pop();
+                if (!mounted) return;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop(true);
+                  }
+                });
               } catch (e) {
-                navigator.pop(); // 에러 발생 시에도 다이얼로그는 닫기
+                navigator.pop();
                 messenger.showSnackBar(
                   SnackBar(
                     content: Text(viewModel.errorMessage ?? e.toString()),
@@ -244,9 +248,15 @@ class _RoomScreenViewState extends State<_RoomScreenView> {
     context.read<RoomViewModel>().updateOccupiedSpaces(zoneId, delta);
   }
 
+  Color _zoneForegroundColor(Color background) {
+    return background.computeLuminance() > 0.58 ? Colors.black87 : Colors.white;
+  }
+
   @override
   Widget build(BuildContext context) {
     final viewModel = context.watch<RoomViewModel>();
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -266,103 +276,256 @@ class _RoomScreenViewState extends State<_RoomScreenView> {
             ),
         ],
       ),
-      body: Builder(
-        builder: (context) {
-          if (viewModel.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colorScheme.primaryContainer.withValues(alpha: 0.42),
+              colorScheme.surface,
+              colorScheme.surface,
+            ],
+          ),
+        ),
+        child: Builder(
+          builder: (context) {
+            if (viewModel.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (viewModel.errorMessage != null && viewModel.room == null) {
-            return Center(child: Text(viewModel.errorMessage!));
-          }
+            if (viewModel.errorMessage != null && viewModel.room == null) {
+              return Center(child: Text(viewModel.errorMessage!));
+            }
 
-          final room = viewModel.room;
-          if (room == null || room.zones.isEmpty) {
-            return const Center(child: Text('등록된 구역이 없습니다'));
-          }
+            final room = viewModel.room;
+            final zones = room?.zones.entries.toList() ?? [];
+            final totalCapacity = zones.fold<int>(
+              0,
+              (sum, zone) => sum + zone.value.totalSpaces,
+            );
+            final occupiedCapacity = zones.fold<int>(
+              0,
+              (sum, zone) => sum + zone.value.occupiedSpaces,
+            );
+            final availableCapacity = totalCapacity - occupiedCapacity;
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: room.zones.length,
-            itemBuilder: (context, index) {
-              final zoneEntry = room.zones.entries.elementAt(index);
-              final zone = zoneEntry.value;
-              final availableSpaces = zone.totalSpaces - zone.occupiedSpaces;
-              
-              return Card(
-                elevation: 2,
-                color: zone.color != 0 ? Color(zone.color) : null,
-                child: InkWell(
-                  onLongPress: () => _showDeleteZoneDialog(zoneEntry.key, zone.name),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        room?.name ?? '방 정보',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '구역별 주차 여유 공간을 실시간으로 확인하고 바로 조정할 수 있어요.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _SummaryTile(
+                              label: '총 공간',
+                              value: '$totalCapacity',
+                              toneColor: colorScheme.primaryContainer,
+                              textColor: colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _SummaryTile(
+                              label: '사용 중',
+                              value: '$occupiedCapacity',
+                              toneColor: colorScheme.secondaryContainer,
+                              textColor: colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _SummaryTile(
+                              label: '여유',
+                              value: '$availableCapacity',
+                              toneColor: colorScheme.tertiaryContainer,
+                              textColor: colorScheme.onTertiaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (room == null || room.zones.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(28),
+                    ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Icon(
+                          Icons.grid_view_rounded,
+                          size: 42,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(height: 14),
                         Text(
-                          zone.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                          '등록된 구역이 없습니다',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '사용 중: ${zone.occupiedSpaces}/${zone.totalSpaces}',
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                                Text(
-                                  '남은 공간: $availableSpaces',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: availableSpaces == 0 
-                                      ? Colors.red 
-                                      : availableSpaces < zone.totalSpaces * 0.2 
-                                        ? Colors.orange 
-                                        : Colors.green,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove),
-                                  onPressed: () => _updateOccupiedSpaces(
-                                    zoneEntry.key,
-                                    -1,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () => _updateOccupiedSpaces(
-                                    zoneEntry.key,
-                                    1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                        Text(
+                          '오른쪽 아래 버튼으로 첫 구역을 추가해보세요.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
+                  )
+                else
+                  ...zones.map((zoneEntry) {
+                    final zone = zoneEntry.value;
+                    final availableSpaces = zone.totalSpaces - zone.occupiedSpaces;
+                    final progress = zone.totalSpaces == 0
+                        ? 0.0
+                        : zone.occupiedSpaces / zone.totalSpaces;
+                    final background = zone.color != 0
+                        ? Color(zone.color)
+                        : colorScheme.surfaceContainerHigh;
+                    final foreground = _zoneForegroundColor(background);
+                    final mutedForeground = foreground.withValues(alpha: 0.78);
+                    final progressColor = availableSpaces == 0
+                        ? const Color(0xFFB91C1C)
+                        : availableSpaces < zone.totalSpaces * 0.2
+                            ? const Color(0xFFD97706)
+                            : const Color(0xFF15803D);
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(28),
+                          onLongPress: () => _showDeleteZoneDialog(zoneEntry.key, zone.name),
+                          child: Ink(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: background,
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        zone.name,
+                                        style: theme.textTheme.titleLarge?.copyWith(
+                                          color: foreground,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: foreground.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        '여유 $availableSpaces',
+                                        style: theme.textTheme.labelLarge?.copyWith(
+                                          color: foreground,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '사용 중 ${zone.occupiedSpaces} / 전체 ${zone.totalSpaces}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: mutedForeground,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: progress.clamp(0.0, 1.0),
+                                    minHeight: 10,
+                                    backgroundColor: foreground.withValues(alpha: 0.16),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      progressColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    _AdjustButton(
+                                      icon: Icons.remove_rounded,
+                                      foreground: foreground,
+                                      onPressed: () => _updateOccupiedSpaces(
+                                        zoneEntry.key,
+                                        -1,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _AdjustButton(
+                                      icon: Icons.add_rounded,
+                                      foreground: foreground,
+                                      onPressed: () => _updateOccupiedSpaces(
+                                        zoneEntry.key,
+                                        1,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+              ],
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddZoneDialog,
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add_rounded),
       ),
     );
   }
@@ -372,5 +535,79 @@ class _RoomScreenViewState extends State<_RoomScreenView> {
     _zoneNameController.dispose();
     _totalSpacesController.dispose();
     super.dispose();
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  const _SummaryTile({
+    required this.label,
+    required this.value,
+    required this.toneColor,
+    required this.textColor,
+  });
+
+  final String label;
+  final String value;
+  final Color toneColor;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: toneColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: textColor.withValues(alpha: 0.76),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: textColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdjustButton extends StatelessWidget {
+  const _AdjustButton({
+    required this.icon,
+    required this.foreground,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final Color foreground;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: foreground.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onPressed,
+        child: SizedBox(
+          width: 52,
+          height: 52,
+          child: Icon(icon, color: foreground),
+        ),
+      ),
+    );
   }
 }

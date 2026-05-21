@@ -90,7 +90,7 @@ class MyApp extends StatelessWidget {
 
   ThemeData _buildTheme(Brightness brightness) {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: Colors.blue,
+      seedColor: const Color(0xFF0F766E),
       brightness: brightness,
     );
 
@@ -102,6 +102,14 @@ class MyApp extends StatelessWidget {
         ThemeData(brightness: brightness).textTheme,
       ),
       scaffoldBackgroundColor: colorScheme.surface,
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: colorScheme.inverseSurface,
+        contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
@@ -109,11 +117,47 @@ class MyApp extends StatelessWidget {
       ),
       cardTheme: CardThemeData(
         color: colorScheme.surfaceContainerLow,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 0,
+        foregroundColor: colorScheme.onPrimary,
+        backgroundColor: colorScheme.primary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
-        border: const OutlineInputBorder(),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(
+            color: colorScheme.primary,
+            width: 1.5,
+          ),
+        ),
         filled: true,
         fillColor: colorScheme.surfaceContainerLowest,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       ),
     );
   }
