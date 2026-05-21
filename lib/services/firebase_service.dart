@@ -32,8 +32,7 @@ class FirebaseService {
     try {
       _log.info('방 삭제 시작 - roomId: $roomId, userId: $userId');
       
-      // 특정 방의 정보만 조회
-      final snapshot = await _database.child('rooms').get();
+      final snapshot = await _database.child('rooms/$roomId').get();
       _log.info('방 정보 조회 - exists: ${snapshot.exists}, value: ${snapshot.value}');
       
       if (!snapshot.exists) {
@@ -47,15 +46,7 @@ class FirebaseService {
         throw '잘못된 방 데이터입니다.';
       }
 
-      // 특정 방의 데이터 추출
-      final roomData = (data)[roomId];
-      _log.info('특정 방 데이터 - roomId: $roomId, data: $roomData');
-
-      if (roomData == null || roomData is! Map) {
-        throw '방을 찾을 수 없습니다.';
-      }
-
-      final creatorId = roomData['creatorId'];
+      final creatorId = data['creatorId'];
       _log.info('방 creatorId 확인 - creatorId: $creatorId, userId: $userId');
       
       if (creatorId == null) {
@@ -184,8 +175,7 @@ class FirebaseService {
     try {
       _log.info('구역 삭제 시작 - roomId: $roomId, zoneId: $zoneId, userId: $userId');
       
-      // 방 정보 조회하여 권한 확인
-      final snapshot = await _database.child('rooms').get();
+      final snapshot = await _database.child('rooms/$roomId').get();
       if (!snapshot.exists) {
         throw '존재하지 않는 방입니다.';
       }
@@ -195,12 +185,7 @@ class FirebaseService {
         throw '잘못된 방 데이터입니다.';
       }
 
-      final roomData = data[roomId];
-      if (roomData == null || roomData is! Map) {
-        throw '방을 찾을 수 없습니다.';
-      }
-
-      final creatorId = roomData['creatorId'];
+      final creatorId = data['creatorId'];
       _log.info('방 creatorId 확인 - creatorId: $creatorId, userId: $userId');
       
       if (creatorId == null) {

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../models/room.dart';
-import '../services/firebase_service.dart';
-import 'package:logging/logging.dart';
+import 'package:provider/provider.dart';
+import 'package:zonemanager/repositories/room_repository.dart';
+import 'package:zonemanager/viewmodels/room_view_model.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
-class RoomScreen extends StatefulWidget {
+class RoomScreen extends StatelessWidget {
   final String roomId;
   final String userId;
 
@@ -14,15 +15,56 @@ class RoomScreen extends StatefulWidget {
   });
 
   @override
-  State<RoomScreen> createState() => _RoomScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => RoomViewModel(
+        roomRepository: context.read<RoomRepository>(),
+        roomId: roomId,
+        userId: userId,
+      )..initialize(),
+      child: const _RoomScreenView(),
+    );
+  }
 }
 
-class _RoomScreenState extends State<RoomScreen> {
-  final FirebaseService _firebaseService = FirebaseService();
+class _RoomScreenView extends StatefulWidget {
+  const _RoomScreenView();
+
+  @override
+  State<_RoomScreenView> createState() => _RoomScreenViewState();
+}
+
+class _RoomScreenViewState extends State<_RoomScreenView> {
   final _formKey = GlobalKey<FormState>();
   final _zoneNameController = TextEditingController();
   final _totalSpacesController = TextEditingController();
-  final _log = Logger('RoomScreen');
+  Color _selectedColor = const Color(0xFFF5F5F5); // 기본 색상을 연한 회색으로 변경
+
+  void _showColorPicker() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('색상 선택'),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: _selectedColor,
+            onColorChanged: (color) {
+              setState(() {
+                _selectedColor = color;
+              });
+            },
+            pickerAreaHeightPercent: 0.8,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('선택'),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showAddZoneDialog() {
     showDialog(
@@ -65,6 +107,16 @@ class _RoomScreenState extends State<RoomScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: Icon(Icons.color_lens, color: _selectedColor),
+                label: const Text('색상 선택'),
+                onPressed: _showColorPicker,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                ),
+              ),
             ],
           ),
         ),
@@ -76,18 +128,21 @@ class _RoomScreenState extends State<RoomScreen> {
           ElevatedButton(
             onPressed: () async {
               if (_formKey.currentState!.validate()) {
-                final zone = ParkingZone(
-                  name: _zoneNameController.text,
-                  totalSpaces: int.parse(_totalSpacesController.text),
-                );
-
+                final viewModel = context.read<RoomViewModel>();
                 final navigator = Navigator.of(dialogContext);
                 final messenger = ScaffoldMessenger.of(dialogContext);
 
                 try {
-                  await _firebaseService.addParkingZone(widget.roomId, zone);
+                  await viewModel.addParkingZone(
+                    name: _zoneNameController.text,
+                    totalSpaces: int.parse(_totalSpacesController.text),
+                    colorValue: _selectedColor.toARGB32(),
+                  );
                   _zoneNameController.clear();
                   _totalSpacesController.clear();
+                  setState(() {
+                    _selectedColor = Colors.blue; // 색상 초기화
+                  });
                   navigator.pop();
                 } catch (e) {
                   messenger.showSnackBar(
@@ -116,20 +171,20 @@ class _RoomScreenState extends State<RoomScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              final viewModel = context.read<RoomViewModel>();
               final navigator = Navigator.of(dialogContext);
               final parentNavigator = Navigator.of(context);
               final messenger = ScaffoldMessenger.of(dialogContext);
 
               try {
-                _log.info('방 삭제 시도 - userId: ${widget.userId}');
-                await _firebaseService.deleteRoom(widget.roomId, widget.userId);
+                await viewModel.deleteRoom();
                 navigator.pop(); // 다이얼로그 닫기
                 parentNavigator.pop(); // 화면 닫기
               } catch (e) {
                 navigator.pop(); // 에러 발생 시에도 다이얼로그는 닫기
                 messenger.showSnackBar(
                   SnackBar(
-                    content: Text(e.toString()),
+                    content: Text(viewModel.errorMessage ?? e.toString()),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -158,21 +213,18 @@ class _RoomScreenState extends State<RoomScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              final viewModel = context.read<RoomViewModel>();
               final navigator = Navigator.of(dialogContext);
               final messenger = ScaffoldMessenger.of(dialogContext);
 
               try {
-                await _firebaseService.deleteParkingZone(
-                  widget.roomId,
-                  zoneId,
-                  widget.userId,
-                );
+                await viewModel.deleteParkingZone(zoneId);
                 navigator.pop();
               } catch (e) {
                 navigator.pop();
                 messenger.showSnackBar(
                   SnackBar(
-                    content: Text(e.toString()),
+                    content: Text(viewModel.errorMessage ?? e.toString()),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -188,54 +240,44 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
-  void _updateOccupiedSpaces(String zoneId, int currentCount, int totalSpaces, int delta) {
-    final newCount = currentCount + delta;
-    if (newCount >= 0 && newCount <= totalSpaces) {
-      _firebaseService.updateOccupiedSpaces(widget.roomId, zoneId, newCount);
-    }
+  void _updateOccupiedSpaces(String zoneId, int delta) {
+    context.read<RoomViewModel>().updateOccupiedSpaces(zoneId, delta);
   }
 
   @override
   Widget build(BuildContext context) {
+    final viewModel = context.watch<RoomViewModel>();
+
     return Scaffold(
       appBar: AppBar(
-        title: StreamBuilder(
-          stream: _firebaseService.getRoom(widget.roomId),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) return const Text('로딩 중...');
-            final room = snapshot.data!;
-            final isCreator = room.creatorId == widget.userId;
-            _log.info('방 정보 - roomId: ${widget.roomId}, creatorId: ${room.creatorId}, userId: ${widget.userId}, isCreator: $isCreator');
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Expanded(
-                  child: Text(room.name, textAlign: TextAlign.center),
-                ),
-                if (isCreator)
-                  IconButton(
-                    icon: const Icon(Icons.delete),
-                    onPressed: _showDeleteRoomDialog,
-                  ),
-              ],
-            );
-          },
+        title: Text(
+          viewModel.room?.name ?? '로딩 중...',
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         centerTitle: true,
+        actions: [
+          if (viewModel.isCreator)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _showDeleteRoomDialog,
+            ),
+        ],
       ),
-      body: StreamBuilder(
-        stream: _firebaseService.getRoom(widget.roomId),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('오류가 발생했습니다'));
-          }
-
-          if (!snapshot.hasData) {
+      body: Builder(
+        builder: (context) {
+          if (viewModel.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final room = snapshot.data!;
-          if (room.zones.isEmpty) {
+          if (viewModel.errorMessage != null && viewModel.room == null) {
+            return Center(child: Text(viewModel.errorMessage!));
+          }
+
+          final room = viewModel.room;
+          if (room == null || room.zones.isEmpty) {
             return const Center(child: Text('등록된 구역이 없습니다'));
           }
 
@@ -245,7 +287,11 @@ class _RoomScreenState extends State<RoomScreen> {
             itemBuilder: (context, index) {
               final zoneEntry = room.zones.entries.elementAt(index);
               final zone = zoneEntry.value;
+              final availableSpaces = zone.totalSpaces - zone.occupiedSpaces;
+              
               return Card(
+                elevation: 2,
+                color: zone.color != 0 ? Color(zone.color) : null,
                 child: InkWell(
                   onLongPress: () => _showDeleteZoneDialog(zoneEntry.key, zone.name),
                   child: Padding(
@@ -264,9 +310,26 @@ class _RoomScreenState extends State<RoomScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              '${zone.occupiedSpaces}/${zone.totalSpaces}',
-                              style: const TextStyle(fontSize: 16),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '사용 중: ${zone.occupiedSpaces}/${zone.totalSpaces}',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                                Text(
+                                  '남은 공간: $availableSpaces',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: availableSpaces == 0 
+                                      ? Colors.red 
+                                      : availableSpaces < zone.totalSpaces * 0.2 
+                                        ? Colors.orange 
+                                        : Colors.green,
+                                  ),
+                                ),
+                              ],
                             ),
                             Row(
                               children: [
@@ -274,8 +337,6 @@ class _RoomScreenState extends State<RoomScreen> {
                                   icon: const Icon(Icons.remove),
                                   onPressed: () => _updateOccupiedSpaces(
                                     zoneEntry.key,
-                                    zone.occupiedSpaces,
-                                    zone.totalSpaces,
                                     -1,
                                   ),
                                 ),
@@ -283,8 +344,6 @@ class _RoomScreenState extends State<RoomScreen> {
                                   icon: const Icon(Icons.add),
                                   onPressed: () => _updateOccupiedSpaces(
                                     zoneEntry.key,
-                                    zone.occupiedSpaces,
-                                    zone.totalSpaces,
                                     1,
                                   ),
                                 ),

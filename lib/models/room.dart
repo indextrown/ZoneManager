@@ -56,27 +56,27 @@ class Room {
 class ParkingZone {
   final String name;
   final int totalSpaces;
-  int occupiedSpaces;
+  final int occupiedSpaces;
+  final int color;
 
   ParkingZone({
     required this.name,
     required this.totalSpaces,
     this.occupiedSpaces = 0,
+    this.color = 0,
   });
 
-  Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'totalSpaces': totalSpaces,
-      'occupiedSpaces': occupiedSpaces,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'totalSpaces': totalSpaces,
+    'occupiedSpaces': occupiedSpaces,
+    'color': color,
+  };
 
-  factory ParkingZone.fromJson(Map<String, dynamic> json) {
-    return ParkingZone(
-      name: json['name'],
-      totalSpaces: json['totalSpaces'],
-      occupiedSpaces: json['occupiedSpaces'] ?? 0,
-    );
-  }
+  factory ParkingZone.fromJson(Map<String, dynamic> json) => ParkingZone(
+    name: json['name'] as String,
+    totalSpaces: json['totalSpaces'] as int,
+    occupiedSpaces: json['occupiedSpaces'] as int? ?? 0,
+    color: json['color'] as int? ?? 0,
+  );
 } 

@@ -1,66 +1,57 @@
 import 'package:flutter/material.dart';
-import '../services/firebase_service.dart';
-import '../services/user_service.dart';
+import 'package:provider/provider.dart';
+import 'package:zonemanager/repositories/room_repository.dart';
+import 'package:zonemanager/repositories/user_repository.dart';
+import 'package:zonemanager/viewmodels/home_view_model.dart';
+import 'package:zonemanager/viewmodels/theme_view_model.dart';
 import 'room_screen.dart';
-import 'package:logging/logging.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => HomeViewModel(
+        roomRepository: context.read<RoomRepository>(),
+        userRepository: context.read<UserRepository>(),
+      )..initialize(),
+      child: const _HomeScreenView(),
+    );
+  }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final FirebaseService _firebaseService = FirebaseService();
-  final _formKey = GlobalKey<FormState>();
-  final _roomNameController = TextEditingController();
-  final _log = Logger('HomeScreen');
-  String? _userId;
+class _HomeScreenView extends StatefulWidget {
+  const _HomeScreenView();
 
   @override
-  void initState() {
-    super.initState();
-    _initUserId();
-  }
+  State<_HomeScreenView> createState() => _HomeScreenViewState();
+}
 
-  Future<void> _initUserId() async {
-    final userService = await UserService.getInstance();
-    _userId = await userService.getUserId();
-    _log.info('사용자 ID 초기화: $_userId');
-  }
+class _HomeScreenViewState extends State<_HomeScreenView> {
+  final _formKey = GlobalKey<FormState>();
+  final _roomNameController = TextEditingController();
 
   void _createRoom() async {
-    if (_userId == null) {
-      _log.severe('사용자 ID가 초기화되지 않음');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('사용자 ID 초기화 중입니다. 잠시 후 다시 시도해주세요.')),
-      );
-      return;
-    }
-
     if (_formKey.currentState!.validate()) {
-      _log.info('방 생성 시도: ${_roomNameController.text}');
+      final viewModel = context.read<HomeViewModel>();
       try {
-        final roomId = await _firebaseService.createRoom(_roomNameController.text, _userId!);
+        final roomId = await viewModel.createRoom(_roomNameController.text);
         _roomNameController.clear();
-        if (mounted) {
-          _log.info('방 생성 성공: $roomId');
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => RoomScreen(
-                roomId: roomId,
-                userId: _userId!,
-              ),
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RoomScreen(
+              roomId: roomId,
+              userId: viewModel.userId!,
             ),
-          );
-        }
-      } catch (e, stackTrace) {
-        _log.severe('방 생성 실패', e, stackTrace);
+          ),
+        );
+      } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('방 생성 중 오류가 발생했습니다: $e')),
+            SnackBar(content: Text(viewModel.errorMessage ?? '방 생성 중 오류가 발생했습니다: $e')),
           );
         }
       }
@@ -68,21 +59,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _joinRoom(String roomId) {
-    if (_userId == null) {
-      _log.severe('사용자 ID가 초기화되지 않음');
+    final viewModel = context.read<HomeViewModel>();
+    if (viewModel.userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('사용자 ID 초기화 중입니다. 잠시 후 다시 시도해주세요.')),
       );
       return;
     }
 
-    _log.info('방 참여: $roomId');
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => RoomScreen(
           roomId: roomId,
-          userId: _userId!,
+          userId: viewModel.userId!,
         ),
       ),
     );
@@ -90,10 +80,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final themeViewModel = context.watch<ThemeViewModel>();
+    final homeViewModel = context.watch<HomeViewModel>();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('주차 관리자'),
-        centerTitle: true,
+        title: const Text('주차 관리'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              themeViewModel.isDarkMode 
+                ? Icons.light_mode 
+                : Icons.dark_mode
+            ),
+            onPressed: () {
+              context.read<ThemeViewModel>().toggleTheme();
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -119,13 +123,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: _createRoom,
-                    child: const Text('방 만들기'),
+                    onPressed: homeViewModel.isCreatingRoom ? null : _createRoom,
+                    child: Text(
+                      homeViewModel.isCreatingRoom ? '생성 중...' : '방 만들기',
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 32),
+            if (homeViewModel.errorMessage != null) ...[
+              Text(
+                homeViewModel.errorMessage!,
+                style: const TextStyle(color: Colors.red),
+              ),
+              const SizedBox(height: 12),
+            ],
             const Text(
               '참여 가능한 방',
               style: TextStyle(
@@ -135,42 +148,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: StreamBuilder(
-                stream: _firebaseService.getRooms(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: Colors.red,
-                            size: 48,
-                          ),
-                          const SizedBox(height: 16),
-                          Text('오류가 발생했습니다\n${snapshot.error}'),
-                        ],
-                      ),
-                    );
-                  }
-
-                  if (!snapshot.hasData) {
+              child: Builder(
+                builder: (context) {
+                  if (homeViewModel.isLoadingRooms || homeViewModel.isInitializingUser) {
                     return const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           CircularProgressIndicator(),
                           SizedBox(height: 16),
-                          Text('방 목록을 불러오는 중...'),
+                          Text('데이터를 불러오는 중...'),
                         ],
                       ),
                     );
                   }
 
-                  final rooms = snapshot.data ?? [];
-
-                  if (rooms.isEmpty) {
+                  if (homeViewModel.rooms.isEmpty) {
                     return const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -188,19 +181,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
 
                   return ListView.builder(
-                    itemCount: rooms.length,
+                    itemCount: homeViewModel.rooms.length,
                     itemBuilder: (context, index) {
-                      final room = rooms[index];
+                      final room = homeViewModel.rooms[index];
                       return Card(
                         child: ListTile(
                           title: Text(room.name),
                           subtitle: Text('구역 수: ${room.zones.length}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.arrow_forward_ios),
-                            ],
-                          ),
+                          trailing: const Icon(Icons.arrow_forward_ios),
                           onTap: () => _joinRoom(room.id),
                         ),
                       );
@@ -220,4 +208,4 @@ class _HomeScreenState extends State<HomeScreen> {
     _roomNameController.dispose();
     super.dispose();
   }
-} 
+}
