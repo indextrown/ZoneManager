@@ -86,6 +86,22 @@ flutter run
 flutter run --dart-define-from-file=config/firebase.json
 ```
 
+### Android 에뮬레이터에서 실행
+
+먼저 에뮬레이터를 켜고 연결된 디바이스를 확인합니다.
+
+```bash
+flutter devices
+```
+
+결과에서 Android 에뮬레이터 ID를 찾은 뒤 실행합니다.
+
+```bash
+flutter run -d emulator-5554 --dart-define-from-file=config/firebase.json
+```
+
+※ `emulator-5554`는 예시입니다. 실제 ID는 `flutter devices` 출력에서 확인하세요.
+
 ### 연결된 실제 기기에서 실행
 
 먼저 기기를 연결한 뒤 Flutter가 인식하는지 확인합니다.
